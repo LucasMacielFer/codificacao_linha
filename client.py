@@ -1,7 +1,7 @@
 import socket
 
 # O endereço IP e a porta do servidor
-HOST = '192.168.1.10'  # Substitua pelo endereço IP do servidor
+HOST = '10.181.15.227'  # Substitua pelo endereço IP do servidor
 PORTA = 65432
 
 # Cria o socket TCP/IP
