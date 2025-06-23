@@ -66,7 +66,7 @@ class App:
         
         # --- Configuração de Rede ---
         self.ip_entry = tk.Entry(left_frame)
-        self.ip_entry.insert(0, '127.0.0.1') # IP para conectar
+        self.ip_entry.insert(0, '127.0.0.1') # IP para conectar -- mudar quando for testar com dois computadores
         self.ip_entry.pack(side=tk.LEFT, padx=5)
         
         # Iniciar o servidor em uma thread separada para não travar a GUI
@@ -85,33 +85,47 @@ class App:
         canvas.draw()
         
     def processar_e_enviar(self):
-        # Pega a mensagem da caixa de entrada
         msg_original = self.msg_entry.get()
         if not msg_original:
             messagebox.showerror("Erro", "A mensagem não pode estar vazia.")
             return
 
-        # ---- Processo do Host A ----
-        # T4: Criptografar
-        pacote_cifrado = criptografar(msg_original)
-        string_json = json.dumps(pacote_cifrado)
-        self.crypto_text.delete(1.0, tk.END)
-        self.crypto_text.insert(tk.END, string_json)
-        
-        # T5: Transformar em binário
-        binario = texto_para_binario(string_json)
+        # --- ETAPA DE CRIPTOGRAFIA ---
+        # T4: Criptografa a mensagem. O resultado são 3 partes em bytes.
+        nonce, texto_cifrado, tag = criptografar(msg_original)
+
+        # =================================================================
+        #  NOVA LÓGICA PARA VISUALIZAÇÃO (GRÁFICO)
+        # =================================================================
+        # T1/T5: Converte APENAS o texto cifrado para uma string binária para o gráfico.
+        binario_para_grafico = bytes_para_string_binaria(texto_cifrado)
         self.binary_text.delete(1.0, tk.END)
-        self.binary_text.insert(tk.END, binario)
+        self.binary_text.insert(tk.END, f"Binário do Texto Cifrado (para o gráfico):\n{binario_para_grafico}")
+
+        # T6: Aplica o MLT-3 sobre o binário do texto cifrado.
+        sinal_mlt3_para_grafico = codificar_mlt3(binario_para_grafico)
         
-        # T6: Aplicar MLT-3
-        sinal_mlt3 = codificar_mlt3(binario)
+        # T2: Mostra o gráfico focado APENAS na mensagem cifrada.
+        self.desenhar_grafico(self.ax_send, self.canvas_send, sinal_mlt3_para_grafico, "Sinal MLT-3 (Apenas Mensagem Cifrada)")
         
-        # T2: Mostrar o gráfico de envio
-        self.desenhar_grafico(self.ax_send, self.canvas_send, sinal_mlt3, "Sinal MLT-3 Enviado")
+        # Mostra a parte criptografada (em hexadecimal) na GUI para referência
+        self.crypto_text.delete(1.0, tk.END)
+        self.crypto_text.insert(tk.END, f"Nonce: {nonce.hex()}\nTag: {tag.hex()}\nCifrado: {texto_cifrado.hex()}")
+
+        # =================================================================
+        #  LÓGICA PARA TRANSMISSÃO (REDE)
+        # =================================================================
+        # Monta o pacote COMPLETO com todos os bytes necessários para o receptor.
+        pacote_completo_bytes = nonce + tag + texto_cifrado
         
-        # T7: Enviar pela rede
-        # Converte a lista de níveis para uma string para envio
-        dados_para_enviar = ",".join(map(str, sinal_mlt3))
+        # Simula as camadas para o pacote completo, conforme requisitos do projeto.
+        binario_completo_para_rede = bytes_para_string_binaria(pacote_completo_bytes)
+        sinal_mlt3_completo_para_rede = codificar_mlt3(binario_completo_para_rede)
+
+        # Prepara os dados para envio (ex: uma string de "1,0,-1,...")
+        dados_para_enviar = ",".join(map(str, sinal_mlt3_completo_para_rede))
+
+        # T7: Envia os dados completos pela rede em uma thread separada.
         client_thread = threading.Thread(target=self.enviar_dados, args=(dados_para_enviar,))
         client_thread.start()
 
@@ -139,27 +153,45 @@ class App:
 
     def manipular_conexao(self, conn, addr):
         with conn:
-            buffer = ""
+            # Recebe todos os dados enviados pela rede
+            buffer_str = ""
             while True:
                 data = conn.recv(4096)
                 if not data:
                     break
-                buffer += data.decode('utf-8')
+                buffer_str += data.decode('utf-8')
             
-            # --- Processo do Host B ---
-            # Recebe a string de níveis e converte de volta para lista de inteiros
-            niveis_recebidos = [int(n) for n in buffer.split(',')]
+            # --- ETAPAS DE REVERSÃO DO PACOTE COMPLETO (HOST B) ---
+
+            # 1. Converte a string "1,0,-1,..." de volta para uma lista de níveis de tensão
+            niveis_recebidos = [int(n) for n in buffer_str.split(',')]
             
-            # T2: Mostrar gráfico do sinal recebido
-            self.desenhar_grafico(self.ax_recv, self.canvas_recv, niveis_recebidos, "Sinal MLT-3 Recebido")
+            # 2. Decodifica o sinal MLT-3 COMPLETO para a string binária COMPLETA
+            binario_completo_recebido = decodificar_mlt3(niveis_recebidos)
             
-            # T8: Realizar o processo inverso
-            binario_recebido = decodificar_mlt3(niveis_recebidos)
-            string_json_recebida = binario_para_texto(binario_recebido)
-            pacote_recebido = json.loads(string_json_recebida)
-            msg_final = descriptografar(pacote_recebido)
+            # 3. Converte a string binária COMPLETA de volta para o pacote de BYTES COMPLETO
+            pacote_completo_bytes = string_binaria_para_bytes(binario_completo_recebido)
+
+            # 4. AGORA SIM, divide (fatia) o pacote de bytes em suas partes constituintes
+            # Conforme o nosso protocolo: 12 bytes de nonce, 16 de tag, e o resto de cifrado.
+            nonce_recebido = pacote_completo_bytes[:12]
+            tag_recebida = pacote_completo_bytes[12:28]
+            cifrado_recebido = pacote_completo_bytes[28:]
+
+            # --- VISUALIZAÇÃO E DESCRIPTOGRAFIA ---
             
-            # Atualiza a caixa de texto da GUI
+            # T2: Gera o gráfico focado APENAS na parte da mensagem cifrada recebida
+            # para manter a simetria com o lado do emissor.
+            if cifrado_recebido: # Garante que há dados para plotar
+                binario_para_grafico = bytes_para_string_binaria(cifrado_recebido)
+                sinal_mlt3_para_grafico = codificar_mlt3(binario_para_grafico)
+                self.desenhar_grafico(self.ax_recv, self.canvas_recv, sinal_mlt3_para_grafico, "Sinal MLT-3 Recebido (Apenas Mensagem)")
+
+            # T8: Descriptografa usando as 3 partes corretas
+            pacote_para_descriptografar = (nonce_recebido, cifrado_recebido, tag_recebida)
+            msg_final = descriptografar(pacote_para_descriptografar)
+            
+            # Atualiza a caixa de texto da GUI com a mensagem final
             self.received_text.config(state='normal')
             self.received_text.delete(1.0, tk.END)
             self.received_text.insert(tk.END, msg_final)
