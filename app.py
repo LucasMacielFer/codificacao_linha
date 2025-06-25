@@ -16,6 +16,7 @@ class App:
     def __init__(self, root):
         self.root = root
         self.root.title("Comunicador com MLT-3 e Criptografia")
+        self.criptografia = True
 
         # --- Frames para organização ---
         main_frame = tk.Frame(root)
@@ -36,6 +37,9 @@ class App:
 
         self.send_button = tk.Button(left_frame, text="Enviar Mensagem", command=self.processar_e_enviar)
         self.send_button.pack(pady=10)
+
+        self.cripto_button = tk.Button(left_frame, text="CRIPTOGRAFIA ON", bg="green", fg="white", command=self.ativa_criptografia)
+        self.cripto_button.pack(pady=10)
 
         tk.Label(left_frame, text="Mensagem Criptografada (JSON):").pack(anchor="w")
         self.crypto_text = scrolledtext.ScrolledText(left_frame, height=4, width=50)
@@ -72,6 +76,13 @@ class App:
         # Iniciar o servidor em uma thread separada para não travar a GUI
         server_thread = threading.Thread(target=self.iniciar_servidor, daemon=True)
         server_thread.start()
+
+    def ativa_criptografia(self):
+        self.criptografia = not self.criptografia
+        if self.criptografia:
+            self.cripto_button.config(bg="green", text="CRIPTOGRAFIA ON")
+        else:
+            self.cripto_button.config(bg="red", text="CRIPTOGRAFIA OFF")
 
     def desenhar_grafico(self, ax, canvas, niveis, titulo):
         ax.clear()
@@ -124,7 +135,9 @@ class App:
 
         # Prepara os dados para envio (ex: uma string de "1,0,-1,...")
         dados_para_enviar = ",".join(map(str, sinal_mlt3_completo_para_rede))
-
+        print(sinal_mlt3_completo_para_rede)
+        print()
+        print(dados_para_enviar)
         # T7: Envia os dados completos pela rede em uma thread separada.
         client_thread = threading.Thread(target=self.enviar_dados, args=(dados_para_enviar,))
         client_thread.start()
@@ -156,6 +169,8 @@ class App:
             # Recebe todos os dados enviados pela rede
             buffer_str = ""
             while True:
+                cripto = conn.recv(9090)
+                print(cripto)
                 data = conn.recv(4096)
                 if not data:
                     break
