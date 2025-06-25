@@ -41,16 +41,16 @@ class App:
         self.cripto_button = tk.Button(left_frame, text="CRIPTOGRAFIA ON", bg="green", fg="white", command=self.ativa_criptografia)
         self.cripto_button.pack(pady=10)
 
-        tk.Label(left_frame, text="Mensagem Criptografada (JSON):").pack(anchor="w")
+        tk.Label(left_frame, text="Mensagem Criptografada:").pack(anchor="w")
         self.crypto_text = scrolledtext.ScrolledText(left_frame, height=4, width=50)
         self.crypto_text.pack(fill=tk.X, expand=True)
 
         tk.Label(left_frame, text="Representação em Binário:").pack(anchor="w")
         self.binary_text = scrolledtext.ScrolledText(left_frame, height=4, width=50)
         self.binary_text.pack(fill=tk.X, expand=True)
-        
+
         # Gráfico de Envio
-        self.fig_send = Figure(figsize=(5, 2), dpi=100)
+        self.fig_send = Figure(figsize=(5, 2.5), dpi=100) # Aumentei um pouco a altura
         self.ax_send = self.fig_send.add_subplot(111)
         self.canvas_send = FigureCanvasTkAgg(self.fig_send, master=left_frame)
         self.canvas_send.get_tk_widget().pack(fill=tk.BOTH, expand=True)
@@ -61,19 +61,18 @@ class App:
         tk.Label(right_frame, text="Mensagem Recebida:").pack(anchor="w")
         self.received_text = scrolledtext.ScrolledText(right_frame, height=4, width=50, state='disabled')
         self.received_text.pack(fill=tk.X, expand=True)
-        
+
         # Gráfico de Recepção
-        self.fig_recv = Figure(figsize=(5, 2), dpi=100)
+        self.fig_recv = Figure(figsize=(5, 2.5), dpi=100) # Aumentei um pouco a altura
         self.ax_recv = self.fig_recv.add_subplot(111)
         self.canvas_recv = FigureCanvasTkAgg(self.fig_recv, master=right_frame)
         self.canvas_recv.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        
+
         # --- Configuração de Rede ---
         self.ip_entry = tk.Entry(left_frame)
-        self.ip_entry.insert(0, '127.0.0.1') # IP para conectar -- mudar quando for testar com dois computadores
+        self.ip_entry.insert(0, '127.0.0.1')
         self.ip_entry.pack(side=tk.LEFT, padx=5)
-        
-        # Iniciar o servidor em uma thread separada para não travar a GUI
+
         server_thread = threading.Thread(target=self.iniciar_servidor, daemon=True)
         server_thread.start()
 
@@ -84,73 +83,69 @@ class App:
         else:
             self.cripto_button.config(bg="red", text="CRIPTOGRAFIA OFF")
 
-    def desenhar_grafico(self, ax, canvas, niveis, titulo):
+    # =================================================================
+    #  INÍCIO DA MODIFICAÇÃO NO GRÁFICO
+    # =================================================================
+    def desenhar_grafico(self, ax, canvas, niveis, binario_str, titulo):
         ax.clear()
+        
+        # 1. Desenha o sinal MLT-3
         ax.step(range(len(niveis) + 1), [niveis[0]] + niveis, where='pre')
+        
+        # 2. Adiciona o sinal binário como texto em vermelho na parte de cima
+        for i, bit in enumerate(binario_str):
+            ax.text(i + 0.5, 1.3, bit, color='red', ha='center', va='center', fontweight='bold')
+            
         ax.set_title(titulo)
         ax.set_ylabel("Nível")
         ax.set_xlabel("Bit")
-        ax.set_ylim(-1.2, 1.2)
+        # 3. Ajusta o limite Y para ter espaço para o texto
+        ax.set_ylim(-1.5, 1.8)
+        ax.set_yticks([-1, 0, 1]) # Mantém os ticks originais
         ax.grid(True)
-        canvas.draw()
         
+        canvas.figure.tight_layout() # Ajusta o layout para evitar cortes
+        canvas.draw()
+    # =================================================================
+    #  FIM DA MODIFICAÇÃO NO GRÁFICO
+    # =================================================================
+            
     def processar_e_enviar(self):
         msg_original = self.msg_entry.get()
         if not msg_original:
             messagebox.showerror("Erro", "A mensagem não pode estar vazia.")
             return
 
-        # Limpa as caixas de texto da interface de envio
         self.crypto_text.delete(1.0, tk.END)
         self.binary_text.delete(1.0, tk.END)
 
         if self.criptografia:
-            # --- MODO CRIPTOGRAFADO ---
-            
-            # T4: Criptografa a mensagem.
             nonce, texto_cifrado, tag = criptografar(msg_original)
-
-            # Define a flag de criptografia
             flag_cripto = b'\x01'
-            # O payload são os dados criptografados
             payload = nonce + tag + texto_cifrado
-
-            # Mostra informações relevantes na GUI
             self.crypto_text.insert(tk.END, f"Nonce: {nonce.hex()}\nTag: {tag.hex()}\nCifrado: {texto_cifrado.hex()}")
-            dados_para_grafico = texto_cifrado # O gráfico mostra o sinal da parte cifrada
+            dados_para_grafico = texto_cifrado
             titulo_grafico = "Sinal MLT-3 (Mensagem Cifrada)"
-
         else:
-            # --- MODO TEXTO PURO ---
-            
-            # Define a flag de criptografia
             flag_cripto = b'\x00'
-            # O payload é a própria mensagem, codificada em bytes
             payload = msg_original.encode('utf-8')
-            
-            # Mostra informações relevantes na GUI
             self.crypto_text.insert(tk.END, "A mensagem não foi criptografada.")
-            dados_para_grafico = payload # O gráfico mostra o sinal do texto puro
+            dados_para_grafico = payload
             titulo_grafico = "Sinal MLT-3 (Texto Puro)"
             
-        # =================================================================
-        #  LÓGICA UNIFICADA DE ENVIO
-        # =================================================================
-        # Monta o pacote COMPLETO: a flag de 1 byte + o payload (seja ele cifrado ou não)
         pacote_completo_bytes = flag_cripto + payload
 
-        # Converte os dados que serão usados no gráfico para binário e MLT-3
         binario_para_grafico = bytes_para_string_binaria(dados_para_grafico)
         self.binary_text.insert(tk.END, f"Binário (para o gráfico):\n{binario_para_grafico}")
         sinal_mlt3_para_grafico = codificar_mlt3(binario_para_grafico)
-        self.desenhar_grafico(self.ax_send, self.canvas_send, sinal_mlt3_para_grafico, titulo_grafico)
+        
+        # --- Alteração na chamada da função ---
+        self.desenhar_grafico(self.ax_send, self.canvas_send, sinal_mlt3_para_grafico, binario_para_grafico, titulo_grafico)
 
-        # Prepara o pacote COMPLETO para envio pela rede
         binario_completo_para_rede = bytes_para_string_binaria(pacote_completo_bytes)
         sinal_mlt3_completo_para_rede = codificar_mlt3(binario_completo_para_rede)
         dados_para_enviar = ",".join(map(str, sinal_mlt3_completo_para_rede))
         
-        # T7: Envia os dados completos pela rede em uma thread separada.
         client_thread = threading.Thread(target=self.enviar_dados, args=(dados_para_enviar,))
         client_thread.start()
 
@@ -161,7 +156,6 @@ class App:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.connect((ip_destino, 65432))
                 s.sendall(dados.encode('utf-8'))
-            # messagebox.showinfo("Sucesso", "Mensagem enviada com sucesso!")
         except Exception as e:
             messagebox.showerror("Erro de Conexão", f"Não foi possível conectar a {ip_destino}:\n{e}")
 
@@ -186,68 +180,48 @@ class App:
                 buffer_str += data.decode('utf-8')
             
             if not buffer_str:
-                return # Ignora conexões vazias
+                return
 
-            # --- ETAPAS DE REVERSÃO DO PACOTE (HOST B) ---
-
-            # 1. Converte a string "1,0,-1,..." de volta para uma lista de níveis
             niveis_recebidos = [int(n) for n in buffer_str.split(',')]
-            
-            # 2. Decodifica o sinal MLT-3 para a string binária COMPLETA
             binario_completo_recebido = decodificar_mlt3(niveis_recebidos)
-            
-            # 3. Converte a string binária COMPLETA de volta para o pacote de BYTES
             pacote_completo_bytes = string_binaria_para_bytes(binario_completo_recebido)
 
-            # =================================================================
-            #  NOVA LÓGICA DE DECISÃO BASEADA NA FLAG
-            # =================================================================
-            # 4. Lê a flag (o primeiro byte) para decidir o que fazer
             flag_cripto = pacote_completo_bytes[0:1]
-            payload = pacote_completo_bytes[1:] # O resto dos dados é o payload
+            payload = pacote_completo_bytes[1:]
 
             msg_final = ""
             dados_para_grafico = b''
             titulo_grafico = "Sinal Recebido Inválido"
 
             if flag_cripto == b'\x01':
-                # --- MODO CRIPTOGRAFADO ---
                 try:
-                    # Fatia o payload nas partes da criptografia
                     nonce_recebido = payload[:12]
                     tag_recebida = payload[12:28]
                     cifrado_recebido = payload[28:]
-
-                    # T8: Descriptografa
                     pacote_para_descriptografar = (nonce_recebido, cifrado_recebido, tag_recebida)
                     msg_final = descriptografar(pacote_para_descriptografar)
-                    
                     dados_para_grafico = cifrado_recebido
                     titulo_grafico = "Sinal MLT-3 Recebido (Cifrado)"
                 except Exception as e:
                     msg_final = f"ERRO AO DESCRIPTOGRAFAR: {e}"
-
             elif flag_cripto == b'\x00':
-                # --- MODO TEXTO PURO ---
                 msg_final = payload.decode('utf-8')
                 dados_para_grafico = payload
                 titulo_grafico = "Sinal MLT-3 Recebido (Texto Puro)"
-            
             else:
                 msg_final = "ERRO: Flag de criptografia desconhecida recebida."
 
-            # --- VISUALIZAÇÃO E ATUALIZAÇÃO DA GUI ---
             if dados_para_grafico:
                 binario_para_grafico = bytes_para_string_binaria(dados_para_grafico)
                 sinal_mlt3_para_grafico = codificar_mlt3(binario_para_grafico)
-                self.desenhar_grafico(self.ax_recv, self.canvas_recv, sinal_mlt3_para_grafico, titulo_grafico)
+                
+                # --- Alteração na chamada da função ---
+                self.desenhar_grafico(self.ax_recv, self.canvas_recv, sinal_mlt3_para_grafico, binario_para_grafico, titulo_grafico)
 
-            # Atualiza a caixa de texto da GUI com a mensagem final
             self.received_text.config(state='normal')
             self.received_text.delete(1.0, tk.END)
             self.received_text.insert(tk.END, msg_final)
             self.received_text.config(state='disabled')
-
 
 if __name__ == "__main__":
     root = tk.Tk()
