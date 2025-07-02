@@ -18,8 +18,43 @@ class App:
         self.root.title("Comunicador com MLT-3 e Criptografia")
         self.criptografia = True
 
+        # =================================================================
+        #  <<< INÍCIO DA MODIFICAÇÃO PARA ADICIONAR SCROLL >>>
+        # =================================================================
+        # 1. Cria um container principal para o canvas e a scrollbar
+        container = tk.Frame(root)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        # 2. Cria o Canvas e a Scrollbar
+        canvas = tk.Canvas(container)
+        scrollbar = tk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        
+        # 3. Cria o Frame que vai conter todo o conteúdo e será rolável
+        scrollable_frame = tk.Frame(canvas)
+
+        # 4. Configura o binding para que a scrollbar saiba o tamanho do conteúdo
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(
+                scrollregion=canvas.bbox("all")
+            )
+        )
+
+        # 5. Adiciona o frame rolável dentro do canvas
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        # 6. Empacota o canvas e a scrollbar no container
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        # =================================================================
+        #  <<< FIM DA MODIFICAÇÃO PARA ADICIONAR SCROLL >>>
+        # =================================================================
+
+
         # --- Frames para organização ---
-        main_frame = tk.Frame(root)
+        # MODIFICADO: O main_frame agora é filho do scrollable_frame
+        main_frame = tk.Frame(scrollable_frame) 
         main_frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
 
         left_frame = tk.Frame(main_frame)
@@ -61,35 +96,26 @@ class App:
         self.canvas_send = FigureCanvasTkAgg(self.fig_send, master=left_frame)
         self.canvas_send.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-        # =================================================================
-        #  INÍCIO DA SEÇÃO MODIFICADA (LADO DIREITO)
-        # =================================================================
         # --- Coluna da Direita (Recepção - Host B) ---
         tk.Label(right_frame, text="RECEPÇÃO (HOST B)", font=("Helvetica", 14, "bold")).pack(pady=5)
 
-        # Ordem invertida: Primeiro os dados brutos
         tk.Label(right_frame, text="Dados Brutos Recebidos (Antes de Descriptografar):").pack(anchor="w")
         self.raw_received_text = scrolledtext.ScrolledText(right_frame, height=4, width=50, state='disabled')
         self.raw_received_text.pack(fill=tk.X, expand=True)
 
-        # Novo campo de binário para alinhar com a esquerda
         tk.Label(right_frame, text="Representação em Binário (Recebido):").pack(anchor="w")
         self.received_binary_text = scrolledtext.ScrolledText(right_frame, height=4, width=50, state='disabled')
         self.received_binary_text.pack(fill=tk.X, expand=True)
 
-        # Por último, a mensagem final descriptografada
         tk.Label(right_frame, text="Mensagem Recebida (Final):").pack(anchor="w")
         self.received_text = scrolledtext.ScrolledText(right_frame, height=4, width=50, state='disabled')
         self.received_text.pack(fill=tk.X, expand=True)
-        # =================================================================
-        #  FIM DA SEÇÃO MODIFICADA
-        # =================================================================
 
         # Gráfico de Recepção MLT-3
         self.fig_recv = Figure(figsize=(5, 2.5), dpi=100)
         self.ax_recv = self.fig_recv.add_subplot(111)
         self.canvas_recv = FigureCanvasTkAgg(self.fig_recv, master=right_frame)
-        self.canvas_recv.get_tk_widget().pack(fill=tk.BOTH, expand=True, pady=(10,0)) # Adicionado pady para espaçamento
+        self.canvas_recv.get_tk_widget().pack(fill=tk.BOTH, expand=True, pady=(10,0))
 
         # Gráfico do Sinal Binário (após a decodificação)
         self.fig_recv_bin = Figure(figsize=(5, 2.5), dpi=100)
@@ -121,11 +147,17 @@ class App:
             return
 
         niveis = [int(bit) for bit in binario_str]
-        ax.step(range(len(niveis) + 1), [niveis[0]] + niveis, where='pre', color='red')
+        ax.step(range(len(niveis)), niveis, where='post', color='red')
+
+        for i, nivel in enumerate(niveis):
+            x_pos = i + 0.5
+            y_pos = nivel + 0.15 if nivel == 0 else nivel - 0.2
+            ax.text(x_pos, y_pos, str(nivel), color='black', ha='center', va='center', fontsize=8)
+
         ax.set_title(titulo)
         ax.set_ylabel("Nível")
         ax.set_xlabel("Bit")
-        ax.set_ylim(-0.2, 1.2)
+        ax.set_ylim(-0.4, 1.4)
         ax.set_yticks([0, 1])
         ax.grid(True)
         canvas.figure.tight_layout()
@@ -133,11 +165,22 @@ class App:
 
     def desenhar_grafico(self, ax, canvas, niveis, titulo):
         ax.clear()
-        ax.step(range(len(niveis) + 1), [niveis[0]] + niveis, where='pre', color='dodgerblue')
+        ax.step(range(len(niveis)), niveis, where='post', color='dodgerblue')
+
+        for i, nivel in enumerate(niveis):
+            x_pos = i + 0.5
+            if nivel == 0:
+                y_pos = nivel + 0.15
+            elif nivel > 0:
+                y_pos = nivel - 0.2
+            else:
+                y_pos = nivel + 0.15
+            ax.text(x_pos, y_pos, str(nivel), color='black', ha='center', va='center', fontsize=8)
+
         ax.set_title(titulo)
         ax.set_ylabel("Nível")
         ax.set_xlabel("Bit")
-        ax.set_ylim(-1.2, 1.2)
+        ax.set_ylim(-1.4, 1.4)
         ax.set_yticks([-1, 0, 1])
         ax.grid(True)
         canvas.figure.tight_layout()
@@ -230,7 +273,7 @@ class App:
             titulo_grafico = "Sinal Recebido Inválido"
             titulo_grafico_bin = "Sinal Binário Inválido"
             raw_text_display = ""
-            binario_para_grafico = "" # Inicializa a variável
+            binario_para_grafico = ""
 
             if flag_cripto == b'\x01':
                 try:
@@ -262,7 +305,6 @@ class App:
                 self.desenhar_grafico(self.ax_recv, self.canvas_recv, sinal_mlt3_para_grafico, titulo_grafico)
                 self.desenhar_grafico_binario(self.ax_recv_bin, self.canvas_recv_bin, binario_para_grafico, titulo_grafico_bin)
 
-            # --- Atualiza todas as caixas de texto da direita ---
             self.raw_received_text.config(state='normal')
             self.raw_received_text.delete(1.0, tk.END)
             self.raw_received_text.insert(tk.END, raw_text_display)
